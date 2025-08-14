@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Art Journal Spinners</title>
+<style>
+  body {
+    font-family: Arial, sans-serif;
+    text-align: center;
+  }
+  .spinner-container {
+    display: inline-block;
+    margin: 20px;
+  }
+  canvas {
+    background: #fff;
+    border-radius: 50%;
+  }
+  .history {
+    margin-top: 10px;
+    font-size: 14px;
+    text-align: left;
+    max-width: 420px;
+    margin-left: auto;
+    margin-right: auto;
+    border: 1px solid #ccc;
+    padding: 5px;
+    min-height: 40px;
+  }
+  button {
+    margin-top: 10px;
+    padding: 5px 10px;
+    font-size: 14px;
+  }
+</style>
+</head>
+<body>
+<h2>Directions:</h2>
+<p>
+For the color spinner, spin the wheel three times to get three different colors to integrate into your background. 
+For the stencil/stamp wheel, spin the wheel twice to get two different stencils or stamps to use in the background. 
+Lastly, for the theme wheel, spin once to get the theme for your two-page art journal spread.
+</p>
+
+<div class="spinner-container">
+  <h3>Color Spinner</h3>
+  <canvas id="colorSpinner" width="420" height="420"></canvas><br>
+  <button id="colorBtn" onclick="spinWheel(colorWheel)">Spin</button>
+  <div class="history" id="colorHistory"></div>
+</div>
+
+<div class="spinner-container">
+  <h3>Stencils/Stamps Spinner</h3>
+  <canvas id="stencilSpinner" width="420" height="420"></canvas><br>
+  <button id="stencilBtn" onclick="spinWheel(stencilWheel)">Spin</button>
+  <div class="history" id="stencilHistory"></div>
+</div>
+
+<div class="spinner-container">
+  <h3>Theme Spinner</h3>
+  <canvas id="themeSpinner" width="420" height="420"></canvas><br>
+  <button id="themeBtn" onclick="spinWheel(themeWheel)">Spin</button>
+  <div class="history" id="themeHistory"></div>
+</div>
+
+<script>
+class Spinner {
+  constructor(canvasId, sections, colors, historyId, maxSpins, contrastMode=false) {
+    this.canvas = document.getElementById(canvasId);
+    this.ctx = this.canvas.getContext("2d");
+    this.sections = sections;
+    this.colors = colors;
+    this.historyDiv = document.getElementById(historyId);
+    this.angle = 0;
+    this.contrastMode = contrastMode;
+    this.history = [];
+    this.maxSpins = maxSpins;
+    this.btn = document.getElementById(canvasId.replace("Spinner", "Btn"));
+    this.draw();
+  }
+  
+  draw() {
+    const ctx = this.ctx;
+    const r = this.canvas.width / 2;
+    const sliceAngle = (2 * Math.PI) / this.sections.length;
+    ctx.clearRect(0,0,this.canvas.width,this.canvas.height);
+    ctx.save();
+    ctx.translate(r, r);
+    ctx.rotate(this.angle);
+    
+    for (let i = 0; i < this.sections.length; i++) {
+      const startAngle = i * sliceAngle;
+      const endAngle = startAngle + sliceAngle;
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      let fillColor = this.colors[i % this.colors.length];
+      ctx.fillStyle = fillColor;
+      ctx.arc(0, 0, r, startAngle, endAngle);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      
+      // Text drawing
+      ctx.save();
+      ctx.rotate(startAngle + sliceAngle / 2);
+      ctx.translate(r * 0.65, 0); // Move toward edge
+      ctx.rotate(Math.PI); // Bottom of letters toward center
+
+      let text = this.sections[i];
+      if (this.contrastMode) {
+        ctx.fillStyle = (fillColor.toLowerCase() === "#000000") ? "#FFFFFF" : "#000000";
+      } else {
+        ctx.fillStyle = "#000000";
+      }
+
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      let fontSize = 14;
+      ctx.font = `bold ${fontSize}px Arial`;
+
+      // Wrap into two lines if needed
+      let words = text.split(" ");
+      let lines = [];
+      if (words.length > 1) {
+        let mid = Math.ceil(words.length / 2);
+        lines = [words.slice(0, mid).join(" "), words.slice(mid).join(" ")];
+      } else {
+        lines = [text];
+      }
+
+      if (lines.some(line => line.length > 10)) {
+        fontSize = 12;
+        ctx.font = `bold ${fontSize}px Arial`;
+      }
+
+      let lineHeight = fontSize + 2;
+      let totalHeight = lineHeight * lines.length;
+      let startY = -(totalHeight / 2) + lineHeight / 2;
+      lines.forEach((line, idx) => {
+        ctx.fillText(line, 0, startY + idx * lineHeight);
+      });
+      
+      ctx.restore();
+    }
+    
+    ctx.restore();
+  }
+  
+  spin() {
+    if (this.history.length >= this.maxSpins) {
+      this.btn.disabled = true;
+      return;
+    }
+    const spins = Math.random() * 5 + 5;
+    const finalAngle = this.angle + spins * Math.PI * 2 + Math.random() * Math.PI * 2;
+    const duration = 2000;
+    const startTime = performance.now();
+    const animate = (time) => {
+      const t = Math.min((time - startTime) / duration, 1);
+      this.angle = this.angle + (finalAngle - this.angle) * t;
+      this.draw();
+      if (t < 1) {
+        requestAnimationFrame(animate);
+      } else {
+        this.angle = finalAngle % (2 * Math.PI);
+        this.draw();
+        this.recordChoice();
+      }
+    };
+    requestAnimationFrame(animate);
+  }
+  
+  recordChoice() {
+    const sliceAngle = (2 * Math.PI) / this.sections.length;
+    const index = Math.floor(((2 * Math.PI) - this.angle + Math.PI / 2) % (2 * Math.PI) / sliceAngle);
+    const choice = this.sections[index];
+    
+    if (this.history.includes(choice)) {
+      this.spin();
+      return;
+    }
+    
+    this.history.push(choice);
+    this.historyDiv.textContent = this.history.join(", ");
+    
+    if (this.history.length >= this.maxSpins) {
+      this.btn.disabled = true;
+    }
+  }
+}
+
+const colorSections = ["Red","Orange","Yellow","Green","Blue","Indigo","Violet","Pink","Brown","Gray","Cyan","Magenta"];
+const colorColors = ["#FF0000","#FFA500","#FFFF00","#008000","#0000FF","#4B0082","#EE82EE","#FFC0CB","#A52A2A","#808080","#00FFFF","#FF00FF"];
+
+const stencilSections = ["Flower","Butterfly","Circles","Stars","Deco Pattern","Harlequin Pattern","Hearts","Arrows","Crackle","Rectangle Blocks","Honeycomb","Trees"];
+const stencilColors = Array.from({length: stencilSections.length}, (_,i) => i % 2 === 0 ? "#000000" : "#FFFFFF");
+
+const themeSections = ["Love","Family","Dreams","Favorite Poem","Happiness","Nature's Beauty","Laughter","Furry Friends","When I Was Younger","Letter to Future Self"];
+const themeColors = ["#FF9999","#FFCC99","#FFFF99","#CCFF99","#99FF99","#99FFFF","#9999FF","#CC99FF","#FF99CC","#FFCCFF"];
+
+const colorWheel = new Spinner("colorSpinner", colorSections, colorColors, "colorHistory", 3);
+const stencilWheel = new Spinner("stencilSpinner", stencilSections, stencilColors, "stencilHistory", 2, true);
+const themeWheel = new Spinner("themeSpinner", themeSections, themeColors, "themeHistory", 1);
+
+function spinWheel(wheel) {
+  wheel.spin();
+}
+</script>
+</body>
+</html>

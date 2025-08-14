@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Art Journal Spinner Activity</title>
+<style>
+  :root { --max-size: 420px; }
+  body {
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+    margin: 0; padding: 24px;
+    background: #f6f7fb; color: #111;
+  }
+  .container {
+    max-width: 1100px; margin: 0 auto;
+  }
+  .directions {
+    background: #fff; border: 1px solid #ddd; border-radius: 12px;
+    padding: 16px 18px; margin-bottom: 18px;
+  }
+  .directions h1 {
+    margin: 0 0 8px; font-size: 20px;
+  }
+  .directions p {
+    margin: 0; line-height: 1.5;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(240px, 1fr));
+    gap: 16px;
+  }
+  @media (max-width: 980px) {
+    .grid { grid-template-columns: repeat(2, minmax(240px, 1fr)); }
+  }
+  @media (max-width: 640px) {
+    .grid { grid-template-columns: 1fr; }
+  }
+  .wheel-card {
+    background: #fff; border: 1px solid #ddd; border-radius: 12px;
+    padding: 14px; display: flex; flex-direction: column; align-items: center;
+  }
+  .label { font-weight: 600; margin-bottom: 4px; font-size: 18px; }
+  .stage {
+    position: relative; width: min(90vw, var(--max-size)); max-width: 100%; aspect-ratio: 1 / 1; margin: 6px 0 10px;
+  }
+  .stage canvas {
+    width: 100%; height: 100%;
+    transition: transform 6s cubic-bezier(.08,.59,.12,1); will-change: transform;
+  }
+  .pointer {
+    position: absolute; left: 50%; top: -10px; transform: translateX(-50%);
+    width: 0; height: 0; border-left: 16px solid transparent; border-right: 16px solid transparent; border-bottom: 26px solid #222;
+    filter: drop-shadow(0 2px 2px rgba(0,0,0,.25));
+  }
+  .controls button {
+    cursor: pointer; font-size: 15px; padding: 8px 14px; border-radius: 10px; border: 1px solid #222; background: #fff;
+  }
+  .result { margin-top: 6px; font-weight: 600; min-height: 1.4em; text-align: center; }
+</style>
+</head>
+<body>
+  <div class="container">
+    <div class="directions">
+      <h1>Directions</h1>
+      <p>For the color spinner, spin the wheel three times to get three different colors to integrate into your background.</p>
+      <p>For the stencil/stamp wheel, spin the wheel twice to get two different stencils or stamps to use in the background.</p>
+      <p>Lastly, for the theme wheel, spin once to get the theme for your two-page art journal spread.</p>
+    </div>
+
+    <div class="grid" id="grid"></div>
+  </div>
+
+<script>
+class Spinner {
+  constructor(parent, name, sections, colors = null) {
+    this.name = name;
+    this.sections = sections;
+    this.colors = colors;
+    this.currentRotation = 0;
+    this.spinning = false;
+    this.root = document.createElement('div');
+    this.root.className = 'wheel-card';
+
+    const label = document.createElement('div');
+    label.className = 'label';
+    label.textContent = name;
+    this.root.appendChild(label);
+
+    const stage = document.createElement('div');
+    stage.className = 'stage';
+    stage.innerHTML = '<div class="pointer" aria-hidden="true"></div>';
+    this.canvas = document.createElement('canvas');
+    stage.appendChild(this.canvas);
+    this.root.appendChild(stage);
+
+    const btn = document.createElement('button');
+    btn.textContent = 'Spin';
+    btn.addEventListener('click', () => this.spin());
+    this.root.appendChild(btn);
+
+    this.resultEl = document.createElement('div');
+    this.resultEl.className = 'result';
+    this.resultEl.setAttribute('aria-live', 'polite');
+    this.root.appendChild(this.resultEl);
+
+    parent.appendChild(this.root);
+    this.ctx = this.canvas.getContext('2d');
+
+    const ro = new ResizeObserver(() => this.resizeCanvas());
+    ro.observe(stage);
+
+    this.canvas.addEventListener('transitionend', () => this.onEnd());
+  }
+
+  resizeCanvas() {
+    const size = Math.floor(this.canvas.parentElement.getBoundingClientRect().width);
+    if (size <= 0) return;
+    this.canvas.width = size;
+    this.canvas.height = size;
+    this.draw();
+  }
+
+  draw() {
+    const ctx = this.ctx;
+    const size = this.canvas.width;
+    const cx = size / 2, cy = size / 2;
+    const r = size * 0.48;
+    ctx.clearRect(0, 0, size, size);
+    const N = this.sections.length;
+    const sliceRad = (Math.PI * 2) / N;
+    const startOffset = -Math.PI / 2 - sliceRad / 2;
+
+    for (let i = 0; i < N; i++) {
+      const a0 = startOffset + i * sliceRad;
+      const a1 = a0 + sliceRad;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.arc(cx, cy, r, a0, a1);
+      ctx.closePath();
+      if (this.colors) {
+        ctx.fillStyle = this.colors[i];
+      } else {
+        ctx.fillStyle = i % 2 === 0 ? '#f0f0f0' : '#d0d0d0';
+      }
+      ctx.fill();
+      ctx.strokeStyle = '#000';
+      ctx.lineWidth = Math.max(2, size * 0.005);
+      ctx.stroke();
+
+      const mid = (a0 + a1) / 2;
+      const tx = cx + Math.cos(mid) * r * 0.62;
+      const ty = cy + Math.sin(mid) * r * 0.62;
+      ctx.save();
+      ctx.translate(tx, ty);
+      ctx.rotate(mid + Math.PI/2);
+      ctx.fillStyle = '#000';
+      ctx.font = `${Math.floor(size*0.035)}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(this.sections[i], 0, 0);
+      ctx.restore();
+    }
+
+    ctx.beginPath();
+    ctx.arc(cx, cy, r * 0.06, 0, Math.PI * 2);
+    ctx.fillStyle = '#222';
+    ctx.fill();
+  }
+
+  spin() {
+    if (this.spinning) return;
+    this.spinning = true;
+    this.resultEl.textContent = '';
+    const extra = Math.floor(Math.random() * 360);
+    const turns = 360 * (5 + Math.floor(Math.random() * 4));
+    const delta = turns + extra;
+    this.currentRotation += delta;
+    this.canvas.style.transform = `rotate(${this.currentRotation}deg)`;
+  }
+
+  onEnd() {
+    const N = this.sections.length;
+    const sliceDeg = 360 / N;
+    const normalized = ((this.currentRotation % 360) + 360) % 360;
+    const index = Math.floor((normalized + sliceDeg/2) / sliceDeg) % N;
+    const choice = this.sections[index];
+    this.resultEl.textContent = `Result: ${choice}`;
+    this.spinning = false;
+  }
+}
+
+// Spinner data
+const colorSections = ["Red","Blue","Green","Yellow","Orange","Purple","Pink","Brown","Cyan","Lime","Magenta","Teal"];
+const colorColors = ["red","blue","green","yellow","orange","purple","pink","brown","cyan","lime","magenta","teal"];
+const stencilSections = ["Flower","Butterfly","Circles","Stars","Deco Pattern","Harlequin Pattern","Hearts","Arrows","Crackle","Rectangle Blocks","Honeycomb","Trees"];
+const themeSections = ["Love","Family","Dreams","Favorite Poem","Happiness","Nature's Beauty","Laughter","Furry Friends","When I Was Younger","Letter to Future Self"];
+
+const grid = document.getElementById('grid');
+new Spinner(grid, "Color", colorSections, colorColors);
+new Spinner(grid, "Stencils/Stamps", stencilSections);
+new Spinner(grid, "Theme", themeSections);
+</script>
+</body>
+</html>

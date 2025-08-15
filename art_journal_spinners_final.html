@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Art Journal Spinners — 3 Wheels</title>
+<style>
+  :root {
+    --wheel-size: 380px;
+  }
+  html, body {
+    margin: 0;
+    padding: 0;
+    font-family: Arial, Helvetica, sans-serif;
+    color: #222;
+    background: #f7f7f7;
+  }
+  header {
+    background: #fff;
+    padding: 14px 18px;
+    border-bottom: 1px solid #e5e5e5;
+  }
+  header h1 {
+    font-size: 18px;
+    font-weight: 600;
+    margin: 0 0 8px 0;
+  }
+  header p {
+    margin: 0;
+    font-size: 14px;
+    line-height: 1.4;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+    gap: 18px;
+    padding: 18px;
+    align-items: start;
+  }
+  .spinner-card {
+    background: #fff;
+    border: 1px solid #e5e5e5;
+    border-radius: 10px;
+    padding: 14px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.04);
+  }
+  .spinner-card h2 {
+    margin: 6px 0 10px 0;
+    font-size: 18px;
+  }
+  .wheel-wrap {
+    width: var(--wheel-size);
+    margin: 0 auto;
+    position: relative;
+  }
+  canvas.wheel {
+    width: var(--wheel-size);
+    height: var(--wheel-size);
+    display: block;
+    margin: 0 auto;
+    background: #fff;
+    border-radius: 50%;
+    box-shadow: inset 0 0 0 1px #ddd;
+  }
+  /* Pointer triangle */
+  .pointer {
+    position: absolute;
+    top: -8px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 0;
+    height: 0;
+    border-left: 12px solid transparent;
+    border-right: 12px solid transparent;
+    border-bottom: 18px solid #222;
+  }
+  .controls {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 10px;
+  }
+  .controls button {
+    padding: 8px 12px;
+    font-size: 14px;
+    border: 1px solid #bbb;
+    background: #fafafa;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  .controls button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .history {
+    margin-top: 10px;
+    font-size: 14px;
+    background: #fcfcfc;
+    border: 1px dashed #ccc;
+    padding: 8px;
+    min-height: 24px;
+  }
+</style>
+</head>
+<body>
+  <header>
+    <h1>Directions</h1>
+    <p>For the color spinner, spin the wheel three times to get three different colors to integrate into your background.
+    For the stencil/stamp wheel, spin the wheel twice to get two different stencils or stamps to use in the background.
+    Lastly, for the theme wheel, spin once to get the theme for your two-page art journal spread.</p>
+  </header>
+
+  <main class="grid">
+    <section class="spinner-card" id="card-color">
+      <h2>Color</h2>
+      <div class="wheel-wrap">
+        <div class="pointer" aria-hidden="true"></div>
+        <canvas id="wheel-color" class="wheel" width="380" height="380"></canvas>
+      </div>
+      <div class="controls">
+        <button id="spin-color">Spin</button>
+        <button id="reset-color">Reset</button>
+      </div>
+      <div class="history" id="history-color" aria-live="polite"></div>
+    </section>
+
+    <section class="spinner-card" id="card-stencils">
+      <h2>Stencils/Stamps</h2>
+      <div class="wheel-wrap">
+        <div class="pointer" aria-hidden="true"></div>
+        <canvas id="wheel-stencils" class="wheel" width="380" height="380"></canvas>
+      </div>
+      <div class="controls">
+        <button id="spin-stencils">Spin</button>
+        <button id="reset-stencils">Reset</button>
+      </div>
+      <div class="history" id="history-stencils" aria-live="polite"></div>
+    </section>
+
+    <section class="spinner-card" id="card-theme">
+      <h2>Theme</h2>
+      <div class="wheel-wrap">
+        <div class="pointer" aria-hidden="true"></div>
+        <canvas id="wheel-theme" class="wheel" width="380" height="380"></canvas>
+      </div>
+      <div class="controls">
+        <button id="spin-theme">Spin</button>
+        <button id="reset-theme">Reset</button>
+      </div>
+      <div class="history" id="history-theme" aria-live="polite"></div>
+    </section>
+  </main>
+
+<script>
+/** Utility: pick black or white for best contrast */
+function bestTextColor(hex) {
+  try {
+    const c = hex.replace('#','');
+    const r = parseInt(c.substr(0,2),16);
+    const g = parseInt(c.substr(2,2),16);
+    const b = parseInt(c.substr(4,2),16);
+    // Relative luminance
+    const L = 0.2126*(r/255) + 0.7152*(g/255) + 0.0722*(b/255);
+    return L > 0.6 ? '#000000' : '#FFFFFF';
+  } catch(e) {
+    return '#000000';
+  }
+}
+
+/** Spinner class */
+class Spinner {
+  constructor(canvasId, sections, colors, maxSpins, contrastMode=false) {
+    this.canvas = document.getElementById(canvasId);
+    this.ctx = this.canvas.getContext('2d');
+    this.sections = sections;   // array of labels
+    this.colors = colors;       // array of hex fills (length == sections.length)
+    this.angle = 0;
+    this.history = [];
+    this.maxSpins = maxSpins;
+    this.spinning = false;
+    this.contrastMode = contrastMode; // if true, force black/white text
+    this.draw();
+  }
+
+  draw() {
+    const ctx = this.ctx;
+    const size = this.canvas.width;
+    const r = size/2;
+    const slice = (2*Math.PI) / this.sections.length;
+
+    ctx.clearRect(0,0,size,size);
+    ctx.save();
+    ctx.translate(r, r);
+    ctx.rotate(this.angle);
+
+    for (let i=0; i<this.sections.length; i++) {
+      const start = i*slice;
+      const end = start + slice;
+      // Fill slice
+      ctx.beginPath();
+      ctx.moveTo(0,0);
+      ctx.fillStyle = this.colors[i];
+      ctx.arc(0,0, r-2, start, end, false);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(0,0,0,0.15)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      // Text
+      const label = this.sections[i];
+      ctx.save();
+      // Rotate to the slice center
+      ctx.rotate(start + slice/2);
+      // Move text outward along radius
+      const textRadius = r * 0.62;
+      ctx.translate(textRadius, 0);
+      // Bottom of letters toward center
+      ctx.rotate(Math.PI);
+
+      // Decide text color
+      let fill = '#000000';
+      if (this.contrastMode) {
+        fill = (this.colors[i].toLowerCase() === '#000000') ? '#FFFFFF' : '#000000';
+      } else {
+        fill = bestTextColor(this.colors[i]);
+      }
+      ctx.fillStyle = fill;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+
+      // Compute available chord width at this radius
+      const chord = 2 * textRadius * Math.sin(slice/2);
+      const maxWidth = chord * 0.86; // margin
+
+      // Fit text into up to 2 lines, adjust font size
+      const { lines, fontSize, lineHeight } = this.layoutText(ctx, label, maxWidth, 16, 11);
+      ctx.font = `bold ${fontSize}px Arial`;
+
+      const totalH = lineHeight * lines.length;
+      let y = - (totalH/2) + lineHeight/2;
+      for (let li=0; li<lines.length; li++) {
+        ctx.fillText(lines[li], 0, y + li*lineHeight);
+      }
+
+      ctx.restore();
+    }
+
+    ctx.restore();
+
+    // center hub
+    ctx.beginPath();
+    ctx.arc(r, r, 24, 0, 2*Math.PI);
+    ctx.fillStyle = '#ffffff';
+    ctx.fill();
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = '#cccccc';
+    ctx.stroke();
+  }
+
+  layoutText(ctx, text, maxWidth, maxFont, minFont) {
+    let fontSize = maxFont;
+    let lines = [text];
+    let lineHeight = fontSize + 2;
+
+    const tryMeasure = (fs, proposedLines) => {
+      ctx.font = `bold ${fs}px Arial`;
+      return proposedLines.every(line => ctx.measureText(line).width <= maxWidth);
+    };
+
+    const splitBest = (str) => {
+      const words = str.split(' ');
+      if (words.length <= 1) return [str];
+      // try all splits, choose best (minimize max width)
+      let best = [str];
+      let minMax = Infinity;
+      for (let i=1; i<words.length; i++) {
+        const left = words.slice(0,i).join(' ');
+        const right = words.slice(i).join(' ');
+        const wLeft = ctx.measureText(left).width;
+        const wRight = ctx.measureText(right).width;
+        const mm = Math.max(wLeft, wRight);
+        if (mm < minMax) {
+          minMax = mm;
+          best = [left, right];
+        }
+      }
+      return best;
+    };
+
+    // Start with one line; if it doesn't fit, split to two and reduce
+    ctx.font = `bold ${fontSize}px Arial`;
+    if (ctx.measureText(text).width > maxWidth) {
+      lines = splitBest(text);
+    }
+
+    while (!tryMeasure(fontSize, lines) && fontSize > minFont) {
+      fontSize -= 1;
+      lineHeight = fontSize + 2;
+    }
+
+    // If still too wide (very long word), force single word shrink
+    while (!tryMeasure(fontSize, lines) && fontSize > 8) {
+      fontSize -= 1;
+      lineHeight = fontSize + 2;
+    }
+
+    return { lines, fontSize, lineHeight };
+  }
+
+  spin(onResult) {
+    if (this.history.length >= this.maxSpins) return;
+    if (this.spinning) return;
+    this.spinning = true;
+
+    const turns = 8 + Math.random()*4; // 8–12 spins
+    const target = Math.random() * Math.PI * 2;
+    const finalAngle = this.angle + turns * Math.PI * 2 + target;
+    const start = performance.now();
+    const dur = 2200;
+
+    const animate = (t) => {
+      const k = Math.min((t - start) / dur, 1);
+      const ease = 1 - Math.pow(1 - k, 3);
+      this.angle = this.angle + (finalAngle - this.angle) * ease;
+      this.draw();
+      if (k < 1) {
+        requestAnimationFrame(animate);
+      } else {
+        this.angle = finalAngle % (2*Math.PI);
+        this.draw();
+        // Determine result at pointer (12 o'clock)
+        const slice = (2*Math.PI) / this.sections.length;
+        const idx = Math.floor(((2*Math.PI) - this.angle + Math.PI/2) % (2*Math.PI) / slice);
+        const choice = this.sections[idx];
+
+        // Enforce uniqueness; auto-respin if duplicate
+        if (this.history.includes(choice)) {
+          this.spinning = false;
+          this.spin(onResult); // try again
+          return;
+        }
+
+        this.history.push(choice);
+        if (onResult) onResult(choice);
+        this.spinning = false;
+      }
+    };
+    requestAnimationFrame(animate);
+  }
+
+  reset() {
+    this.history = [];
+    this.angle = 0;
+    this.spinning = false;
+    this.draw();
+  }
+}
+
+/*** DATA ***/
+const COLOR_SECTIONS = [
+  "Cameo Pink","Pink Parfait","Bright Magenta","Red Apple","Tuscan Red",
+  "Harvest Orange","Pumpkin Orange","Kings Gold","Bright Yellow","Yellow",
+  "Lime Tree","Kelly Green","Christmas Green","Turquoise","Cobalt Hue",
+  "English Navy","Concord Grape","Nutmeg Brown","Elephant Gray","Petunia Purple"
+];
+const COLOR_FILLS = [
+  "#EFBBCC","#F6B1C3","#FF007F","#BE1E2D","#7C3030",
+  "#E17000","#F77F00","#FFB300","#FFD300","#FFFF00",
+  "#A6CE39","#4CBB17","#006B3C","#40E0D0","#0047AB",
+  "#003366","#7C5295","#683C00","#A9A9A9","#A020F0"
+];
+
+const STENCIL_SECTIONS = ["Flower","Butterfly","Circles","Stars","Deco Pattern","Harlequin Pattern","Hearts","Arrows","Crackle","Rectangle Blocks","Honeycomb","Trees"];
+const STENCIL_FILLS = STENCIL_SECTIONS.map((_,i)=> i%2===0 ? "#000000" : "#FFFFFF");
+
+const THEME_SECTIONS = ["Love","Family","Dreams","Favorite Poem","Happiness","Nature's Beauty","Laughter","Furry Friends","When I Was Younger","Letter to Future Self"];
+const THEME_FILLS = ["#FFD700","#87CEEB","#90EE90","#FFA07A","#9370DB","#FF69B4","#20B2AA","#F4A460","#FF4500","#8FBC8F"];
+
+/*** INIT ***/
+const wheelColor = new Spinner("wheel-color", COLOR_SECTIONS, COLOR_FILLS, 3, false);
+const wheelStencils = new Spinner("wheel-stencils", STENCIL_SECTIONS, STENCIL_FILLS, 2, true);
+const wheelTheme = new Spinner("wheel-theme", THEME_SECTIONS, THEME_FILLS, 1, false);
+
+/*** UI HOOKUP ***/
+const hColor = document.getElementById("history-color");
+const hStencils = document.getElementById("history-stencils");
+const hTheme = document.getElementById("history-theme");
+
+document.getElementById("spin-color").addEventListener("click", ()=>{
+  if (wheelColor.history.length >= 3) return;
+  wheelColor.spin((choice)=>{
+    hColor.textContent = wheelColor.history.join(", ");
+    if (wheelColor.history.length >= 3) document.getElementById("spin-color").disabled = true;
+  });
+});
+document.getElementById("reset-color").addEventListener("click", ()=>{
+  wheelColor.reset();
+  hColor.textContent = "";
+  document.getElementById("spin-color").disabled = false;
+});
+
+document.getElementById("spin-stencils").addEventListener("click", ()=>{
+  if (wheelStencils.history.length >= 2) return;
+  wheelStencils.spin((choice)=>{
+    hStencils.textContent = wheelStencils.history.join(", ");
+    if (wheelStencils.history.length >= 2) document.getElementById("spin-stencils").disabled = true;
+  });
+});
+document.getElementById("reset-stencils").addEventListener("click", ()=>{
+  wheelStencils.reset();
+  hStencils.textContent = "";
+  document.getElementById("spin-stencils").disabled = false;
+});
+
+document.getElementById("spin-theme").addEventListener("click", ()=>{
+  if (wheelTheme.history.length >= 1) return;
+  wheelTheme.spin((choice)=>{
+    hTheme.textContent = wheelTheme.history.join(", ");
+    if (wheelTheme.history.length >= 1) document.getElementById("spin-theme").disabled = true;
+  });
+});
+document.getElementById("reset-theme").addEventListener("click", ()=>{
+  wheelTheme.reset();
+  hTheme.textContent = "";
+  document.getElementById("spin-theme").disabled = false;
+});
+</script>
+</body>
+</html>
